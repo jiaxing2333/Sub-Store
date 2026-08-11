@@ -5,16 +5,13 @@ RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
 
 WORKDIR /app/backend
 
-# Copy package files and patches directory required by pnpm patchedDependencies
-COPY backend/package.json backend/pnpm-lock.yaml ./
-COPY backend/patches/ ./patches/
-
-# Allow built dependencies for pnpm 10+
-ENV PNPM_CONFIG_ONLY_BUILT_DEPENDENCIES="core-js,esbuild,nodemon"
-
-RUN pnpm install --no-frozen-lockfile
-
+# Copy backend files
 COPY backend/ ./
+
+# Install dependencies ignoring lifecycle scripts (bypasses npx only-allow preinstall)
+RUN pnpm install --no-frozen-lockfile --ignore-scripts
+
+# Bundle backend
 RUN pnpm bundle:esbuild
 
 # 2. Runtime stage

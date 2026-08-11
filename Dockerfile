@@ -19,7 +19,7 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-COPY --from=builder /app/backend/sub-store.min.js ./
+COPY --from=builder /app/backend/dist/sub-store.bundle.js ./
 
 # Default environment variables
 ENV SUB_STORE_BACKEND_API_HOST=0.0.0.0
@@ -29,4 +29,4 @@ ENV SUB_STORE_DATA_BASE_PATH=/opt/app/data
 EXPOSE 3001
 VOLUME [ "/opt/app/data" ]
 
-CMD ["node", "sub-store.min.js"]
+CMD ["node", "sub-store.bundle.js"]

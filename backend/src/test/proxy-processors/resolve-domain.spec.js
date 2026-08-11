@@ -893,4 +893,43 @@ describe('Resolve Domain Operator', function () {
             tls.connect = originalConnect;
         }
     });
+
+    it('extracts custom DNS from subscription raw content when useSubscriptionDns is enabled', async function () {
+        const queries = [];
+        const server = await startUdpDnsServer((query) => queries.push(query));
+        const customDnsUrl = `udp://${server.host}:${server.port}`;
+        const rawConfig = `
+dns:
+  enable: true
+  nameserver:
+    - ${customDnsUrl}
+`;
+        cacheKeys.push(
+            hex_md5(`CUSTOM:${customDnsUrl}:sub-dns.example.com:IPv4`),
+        );
+
+        try {
+            const processor = ResolveDomainOperator(
+                {
+                    provider: 'Custom',
+                    type: 'IPv4',
+                    useSubscriptionDns: true,
+                    cache: 'disabled',
+                },
+                { sourceRaw: [rawConfig] },
+            );
+            const output = await ApplyProcessor(processor, [
+                { name: 'Sub DNS Test', server: 'sub-dns.example.com', port: 443 },
+            ]);
+
+            expect(output[0].server).to.equal('192.0.2.55');
+            expect(queries).to.have.length(1);
+            expect(queries[0].questions[0]).to.include({
+                type: 'A',
+                name: 'sub-dns.example.com',
+            });
+        } finally {
+            await server.close();
+        }
+    });
 });

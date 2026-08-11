@@ -141,4 +141,6 @@ CHANGELOG.md
 .github/copilot-instructions.md
 CODEMAP.md
 CONTEXT_BUNDLE.md
+ARCHITECTURE.md
+data/
 mydocs

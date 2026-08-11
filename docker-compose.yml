@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  sub-store:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sub-store-local
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - SUB_STORE_BACKEND_API_HOST=0.0.0.0
+      - SUB_STORE_BACKEND_API_PORT=3001
+      - SUB_STORE_DATA_BASE_PATH=/opt/app/data
+      # 可选：API 路径混淆/伪装安全前缀（如使用原配置可取消注释）
+      # - SUB_STORE_BACKEND_MERGE=true
+      # - SUB_STORE_FRONTEND_BACKEND_PATH=/c9gT2jLpW7r
+    volumes:
+      - ./data:/opt/app/data

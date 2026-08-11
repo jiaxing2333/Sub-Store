@@ -3,7 +3,7 @@ import scriptResourceCache from '@/utils/script-resource-cache';
 import { isIPv4, isIPv6, ipAddress, isPlainObject } from '@/utils';
 import { FULL } from '@/utils/logical';
 import { getFlag, removeFlag } from '@/utils/geo';
-import { resolveDns } from '@/utils/dns';
+import { resolveDns, extractDnsServersFromRaw } from '@/utils/dns';
 import lodash from 'lodash';
 import $ from '@/core/app';
 import { hex_md5 } from '@/vendor/md5';
@@ -1119,19 +1119,24 @@ const DOMAIN_RESOLVERS = {
     },
 };
 
-function ResolveDomainOperator({
-    provider,
-    type: _type,
-    filter,
-    cache,
-    url,
-    tlsSkipCertVerify,
-    timeout,
-    cacheTtl,
-    edns: _edns,
-    concurrency: _concurrency,
-    dnsConcurrency: _dnsConcurrency,
-}) {
+function ResolveDomainOperator(
+    {
+        provider,
+        type: _type,
+        filter,
+        cache,
+        url,
+        tlsSkipCertVerify,
+        timeout,
+        cacheTtl,
+        edns: _edns,
+        concurrency: _concurrency,
+        dnsConcurrency: _dnsConcurrency,
+        useSubscriptionDns,
+        useSubscriptionDnsFallback,
+    },
+    executionContext = {},
+) {
     if (['IPv6', 'IP4P'].includes(_type) && ['IP-API'].includes(provider)) {
         throw new Error(`域名解析服务提供方 ${provider} 不支持 ${_type}`);
     }
@@ -1150,8 +1155,41 @@ function ResolveDomainOperator({
     let edns = _edns || '223.6.6.6';
     if (!isIP(edns)) throw new Error(`域名解析 EDNS 应为 IP`);
     const concurrency = normalizeResolveDomainConcurrency(_concurrency);
+
+    let resolvedUrl = url;
+    if (provider === 'Custom' && useSubscriptionDns) {
+        const rawList = executionContext?.sourceRaw;
+        if (Array.isArray(rawList) && rawList.length > 0) {
+            const extracted = rawList
+                .flatMap((raw) =>
+                    extractDnsServersFromRaw(raw, {
+                        includeFallback: useSubscriptionDnsFallback,
+                    }),
+                )
+                .filter(Boolean);
+
+            if (extracted.length > 0) {
+                const manual = url ? parseCustomDnsUrls(url) : [];
+                resolvedUrl = [...extracted, ...manual].join('\n');
+                $.info(
+                    `[Resolve Domain] 从订阅提取到 ${extracted.length} 个 DNS: ${extracted
+                        .slice(0, 3)
+                        .join(', ')}${extracted.length > 3 ? '...' : ''}`,
+                );
+            } else {
+                $.warn(
+                    `[Resolve Domain] useSubscriptionDns=true 但未从订阅内容提取到有效 DNS，回退到手动配置的 url`,
+                );
+            }
+        } else {
+            $.warn(
+                `[Resolve Domain] useSubscriptionDns=true 但 executionContext 中无可用 sourceRaw`,
+            );
+        }
+    }
+
     const customDnsUrl =
-        provider === 'Custom' ? normalizeCustomDnsUrlList(url) : url;
+        provider === 'Custom' ? normalizeCustomDnsUrlList(resolvedUrl) : resolvedUrl;
     const customDnsCount =
         provider === 'Custom' ? parseCustomDnsUrls(customDnsUrl).length : 1;
     const customDnsConcurrency =

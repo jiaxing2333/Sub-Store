@@ -18,6 +18,11 @@
   "author": "Peng-YM",
   "license": "GPL-3.0",
   "pnpm": {
+    "onlyBuiltDependencies": [
+      "core-js",
+      "esbuild",
+      "nodemon"
+    ],
     "patchedDependencies": {
       "http-proxy@1.18.1": "patches/http-proxy@1.18.1.patch"
     }

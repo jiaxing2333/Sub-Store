@@ -2,6 +2,7 @@ import $ from '@/core/app';
 import dnsPacket from 'dns-packet';
 import { Buffer } from 'buffer';
 import { isIPv4, isIPv6 } from '@/utils';
+import { safeLoad } from '@/utils/yaml';
 
 const DNS_DEFAULT_PORT = 53;
 const DNS_TLS_DEFAULT_PORT = 853;
@@ -356,4 +357,143 @@ export async function resolveDns({
         timeout,
         edns,
     });
+}
+
+function filterSupportedDnsUrls(urls) {
+    if (!Array.isArray(urls)) return [];
+    const set = new Set();
+    urls.forEach((item) => {
+        if (!item) return;
+        const str = `${item}`.trim();
+        if (str && !/^(system|dhcp:|quic:|rcode:)/i.test(str)) {
+            set.add(str);
+        }
+    });
+    return Array.from(set);
+}
+
+export function extractDnsServersFromRaw(raw, opts = {}) {
+    if (!raw || typeof raw !== 'string') return [];
+    const { includeFallback = false } = opts;
+    const extracted = [];
+
+    const trimmed = raw.trim();
+
+    // 1. Try JSON / sing-box JSON
+    if (trimmed.startsWith('{')) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (
+                parsed &&
+                typeof parsed === 'object' &&
+                parsed.dns &&
+                Array.isArray(parsed.dns.servers)
+            ) {
+                parsed.dns.servers.forEach((srv) => {
+                    if (typeof srv === 'string') {
+                        extracted.push(srv);
+                    } else if (srv && typeof srv === 'object' && srv.address) {
+                        extracted.push(srv.address);
+                    }
+                });
+                if (extracted.length > 0) {
+                    return filterSupportedDnsUrls(extracted);
+                }
+            }
+        } catch (e) {
+            // Ignore JSON parse error
+        }
+    }
+
+    // 2. Try mihomo / Clash / Stash / Egern YAML
+    if (/\bdns\s*:/i.test(raw) || /\bnameserver\s*:/i.test(raw)) {
+        try {
+            const parsed = safeLoad(raw);
+            if (
+                parsed &&
+                typeof parsed === 'object' &&
+                parsed.dns &&
+                typeof parsed.dns === 'object'
+            ) {
+                if (Array.isArray(parsed.dns.nameserver)) {
+                    extracted.push(...parsed.dns.nameserver);
+                }
+                if (includeFallback && Array.isArray(parsed.dns.fallback)) {
+                    extracted.push(...parsed.dns.fallback);
+                }
+                if (extracted.length > 0) {
+                    return filterSupportedDnsUrls(extracted);
+                }
+            }
+        } catch (e) {
+            // Ignore YAML parse error
+        }
+    }
+
+    // 3. Try QX INI format: [dns] section
+    if (/\[\s*dns\s*\]/i.test(raw)) {
+        const dnsSectionMatch = raw.match(
+            /\[\s*dns\s*\]([\s\S]*?)(?:^\[|$)/im,
+        );
+        if (dnsSectionMatch && dnsSectionMatch[1]) {
+            const lines = dnsSectionMatch[1].split(/\r?\n/);
+            for (let line of lines) {
+                line = line.trim();
+                if (!line || line.startsWith('#') || line.startsWith(';'))
+                    continue;
+                const eqIndex = line.indexOf('=');
+                if (eqIndex !== -1) {
+                    const key = line.slice(0, eqIndex).trim().toLowerCase();
+                    const val = line.slice(eqIndex + 1).trim();
+                    if (key === 'server') {
+                        val.split(',').forEach((item) => {
+                            const trimmedItem = item.trim();
+                            const dnsVal = trimmedItem.split(/\s+/)[0];
+                            if (dnsVal) extracted.push(dnsVal);
+                        });
+                    } else if (key === 'doh-server' || key === 'doq-server') {
+                        val.split(',').forEach((item) => {
+                            const trimmedItem = item.trim();
+                            const dnsVal = trimmedItem.split(/\s+/)[0];
+                            if (dnsVal) extracted.push(dnsVal);
+                        });
+                    }
+                }
+            }
+            if (extracted.length > 0) {
+                return filterSupportedDnsUrls(extracted);
+            }
+        }
+    }
+
+    // 4. Try Surge / Loon INI format: [General] section
+    if (
+        /\[\s*General\s*\]/i.test(raw) ||
+        /dns-server\s*=/i.test(raw) ||
+        /doh-server\s*=/i.test(raw)
+    ) {
+        const lines = raw.split(/\r?\n/);
+        for (let line of lines) {
+            line = line.trim();
+            if (!line || line.startsWith('#') || line.startsWith(';'))
+                continue;
+            const eqIndex = line.indexOf('=');
+            if (eqIndex !== -1) {
+                const key = line.slice(0, eqIndex).trim().toLowerCase();
+                const val = line.slice(eqIndex + 1).trim();
+                if (key === 'dns-server' || key === 'doh-server') {
+                    val.split(',').forEach((item) => {
+                        const trimmedItem = item.trim();
+                        const dnsVal = trimmedItem.split(/\s+/)[0];
+                        if (dnsVal) extracted.push(dnsVal);
+                    });
+                }
+            }
+        }
+        if (extracted.length > 0) {
+            return filterSupportedDnsUrls(extracted);
+        }
+    }
+
+    return filterSupportedDnsUrls(extracted);
 }

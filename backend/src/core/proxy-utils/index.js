@@ -149,6 +149,10 @@ async function processFn(
             Array.isArray(raw) || (raw !== null && typeof raw === 'object')
                 ? raw
                 : [raw];
+        executionContext = {
+            ...executionContext,
+            sourceRaw: context.raw,
+        };
     }
     for (const item of operators) {
         if (isResponseTransformerType(item.type)) {
